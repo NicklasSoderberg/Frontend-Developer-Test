@@ -1,64 +1,67 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { getAuth } from 'firebase/auth';
+	import { onDestroy } from 'svelte';
+	import { timer } from '../stores.js';
 	import { capitalizeFirstLetter } from '../lib/helpers';
-    import Settings from './settings.svelte'
-    import { onDestroy } from 'svelte'
-    import { timer, openModal } from '../stores.js'
 
-    let settings_timeout: number = 0;
-    const unsubscribe = timer.subscribe((value: number) => settings_timeout = value)
-    onDestroy(unsubscribe)
-    timer.set(15000);
-
+	import SettingsModal from '../lib/components/settings/settingsmodal.svelte';
+	import SettingsButton from '../lib/components/settings/settingsbutton.svelte';
+	import Logoutbutton from '$lib/components/login/logoutbutton.svelte';
+	
 	/** @type {import('./$types').PageData} */
 	export let data;
 
-    // getNewJoke fetches a new joke from the API and sets the variables along the way. 
-	async function getNewJoke() {
-		loading = true;
-		const uri = category.length > 0 ? '?category=' + category : '';
-		const response = await fetch('https://api.chucknorris.io/jokes/random' + uri).then((res) => {
-			if (res.status != 200) {
-				throw new Error(`expected status 200, got ${res.status}`);
-			}
-			return res.json();
-		}).catch(err => {
-            console.log(err)
-            return null;
-        });
-		loading = false;
-		if (response && response.value) {
-			openBubble = true;
-			timerID = setTimeout(() => {
-				openBubble = false;
-			}, settings_timeout);
-			joke = response.value;
+	const auth = getAuth();
+	if (browser) {
+		if (!auth.currentUser) {
+			goto('/login');
 		}
+	};
+
+	let settings_timeout: number = 0;
+	const unsubscribe = timer.subscribe((value: number) => (settings_timeout = value));
+	onDestroy(unsubscribe);
+	timer.set(15000);
+
+	let timerID: NodeJS.Timeout;
+	let loading = false;
+	let category = '';
+	let categories: string[] = [];
+	if (data.categories) {
+		categories = data.categories;
+	}
+	let joke = '';
+	let openBubble = false;
+
+	function showJoke(newJoke: string) {
+		openBubble = true;
+		timerID = setTimeout(() => {
+			openBubble = false;
+		}, settings_timeout);
+		joke = newJoke;
 	}
 
-    function openSettings() {
-        openModal.set(true)
-    }
-
-    // Sets the ID for NodeJS.Timeout which sets openBubble = false after 15secs
-    let timerID: NodeJS.Timeout;
-
-    // Controls the showings of the loading animation -> ***, loading = true also hide the button/select
-	let loading = false;
-
-    // Two-way binded variable with categories <select>
-	let category = '';
-
-    // Categories from the api
-    let categories: string[] = [];
-    if (data.categories) {
-        categories = data.categories;
-    }
-
-    // Variable holding the latest fetched joke.
-	let joke = '';
-
-    // Controls the showings of the bubble + bubbletext(joke variable), openBubble = true will also hide the button/select
-	let openBubble = false;
+	async function getJoke() {
+		loading = true;
+		const uri = category.length > 0 ? '?category=' + category : '';
+		const response = await fetch('https://api.chucknorris.io/jokes/random' + uri)
+			.then((res) => {
+				if (res.status != 200) {
+					throw new Error(`expected status 200, got ${res.status}`);
+				}
+				return res.json();
+			})
+			.catch((err) => {
+				console.log(err);
+				return null;
+			});
+		loading = false;
+		if (response && response.value) {
+			showJoke(response.value);
+		}
+	}
 </script>
 
 <div class="container">
@@ -69,7 +72,7 @@
 			alt="Chuck Norris head cartoon"
 			title="Chuck Norris"
 		/>
-        <img
+		<img
 			class="bubble"
 			class:show={openBubble}
 			src="https://static.vecteezy.com/system/resources/previews/001/195/458/original/speech-bubble-png.png"
@@ -80,48 +83,47 @@
 	</div>
 	<h1 class="title--text">Chuck Norris</h1>
 	<div class="generate--container">
-        {#if loading}
-        <div>
-            <p>Fetching new joke..</p>
-            <div class="loader"/>
-        </div>
-        {/if}
+		{#if loading}
+			<div>
+				<p>Fetching new joke..</p>
+				<div class="loader" />
+			</div>
+		{/if}
 
-        <!-- If the bubble is rendered, show shut up button. -->
-        {#if openBubble}
-            <button class="bubble--btn--reset" on:click={() => {clearTimeout(timerID); openBubble = false}}>Shut up! New joke!</button>
-        {/if}
+		{#if openBubble}
+			<button
+				class="bubble--btn--reset"
+				on:click={() => {
+					clearTimeout(timerID);
+					openBubble = false;
+				}}>Shut up! New joke!</button
+			>
+		{/if}
 
-        <!-- 
-            Use case: Renders <Select ~categories> & new joke button
-            
-            Renders if all conditions match,
-            1. Bubble not showing(openBubble === false)
-            2. Not currently fetching from API(loading === false)
-            3. Our categories[string] is populated with categories
-         -->
-        {#if !openBubble && !loading && categories.length > 0}
-		<select bind:value={category}>
-			<option selected value="">All</option>
-			{#each categories as data_category}
-				<option value={data_category}> {capitalizeFirstLetter(data_category)} </option>
-			{/each}
-		</select>
-		<button on:click={() => getNewJoke()}>Open new joke</button>
-        <button id="settings--btn" on:click={() => openSettings()}>Settings</button>
-        {/if}
+		{#if !openBubble && !loading && categories.length > 0}
+			<select bind:value={category}>
+				<option selected value="">All</option>
+				{#each categories as data_category}
+					<option value={data_category}> {capitalizeFirstLetter(data_category)} </option>
+				{/each}
+			</select>
+			<button on:click={() => getJoke()}>Open new joke</button>
+		{/if}
 
-        <!-- Most likely API is broken as we cannot fetch categories. -->
-        {#if categories.length === 0}
-            <p>Chuck Norris joke seems to have broken the API..</p>
-        {/if}
+		{#if categories.length === 0}
+			<p>Chuck Norris joke seems to have broken the API..</p>
+		{/if}
 	</div>
-    <Settings />
+
+	<SettingsButton />
+	<SettingsModal />
+	<Logoutbutton />
 </div>
 
 <style>
 	.container {
 		margin: 0 auto;
+		height: 100vh;
 		width: 400px;
 	}
 
@@ -129,7 +131,7 @@
 		text-align: center;
 		font-size: 3rem;
 		margin-top: 0;
-        color: white;
+		color: white;
 	}
 
 	.hero--image {
@@ -143,6 +145,36 @@
 	.hero--container > .show {
 		opacity: 1;
 		transition: all 200ms ease-in-out;
+	}
+
+	select {
+		width: 100%;
+		min-width: 15ch;
+		max-width: 30ch;
+		border: 1px solid black;
+		border-top-left-radius: 0.25em;
+		border-bottom-left-radius: 0.25em;
+		padding: 0.25em 0.5em;
+		font-size: 1rem;
+		cursor: pointer;
+		line-height: 1.1;
+		background-color: #fff;
+		background-image: linear-gradient(to top, #f9f9f9, #fff 33%);
+	}
+
+	button {
+		width: 100%;
+		min-width: 15ch;
+		max-width: 30ch;
+		border: 1px solid black;
+		border-top-right-radius: 0.25em;
+		border-bottom-right-radius: 0.25em;
+		padding: 0.25em 0.5em;
+		font-size: 1rem;
+		cursor: pointer;
+		line-height: 1.1;
+		background-color: #fff;
+		background-image: linear-gradient(to top, #f9f9f9, #fff 33%);
 	}
 
 	.bubble {
@@ -159,27 +191,42 @@
 	.bubble--text {
 		opacity: 0;
 		width: 239px;
-        height: 225px;
+		height: 215px;
 		position: absolute;
 		left: 27rem;
 		top: 6rem;
-        font-size: 1.3rem;
+		font-size: 1.3rem;
 		transform: rotate(40deg);
 		z-index: 10;
 		color: black;
 		transition: all 200ms ease-in-out;
-        overflow-y: auto;
+		overflow-y: auto;
+	}
+
+	.bubble--text::-webkit-scrollbar-track {
+		box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+		-webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+		border-radius: 10px;
+		background-color: #f5f5f5;
+	}
+
+	.bubble--text::-webkit-scrollbar {
+		width: 12px;
+		background-color: #f5f5f5;
+	}
+
+	.bubble--text::-webkit-scrollbar-thumb {
+		border-radius: 10px;
+		box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+		-webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+		background-color: #adadad;
 	}
 
 	.generate--container {
 		display: flex;
 		justify-content: center;
-        color: white;
+		color: white;
 	}
-
-    #settings--btn {
-        margin-left: 10px;
-    }
 
 	.loader,
 	.loader:before,
